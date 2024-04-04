@@ -1,16 +1,13 @@
 import requests
 import time
 from fake_useragent import UserAgent
-import logging
+from utils import get_logger
+from cache import *
+
+logger = get_logger(logger_name="ExamAPI", log_file="./logs/exam_api.log")
 
 
 class ExamAPI:
-
-    header = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": UserAgent().random,
-    }
 
     def __init__(
         self, base_url="https://api.zjzw.cn/web/api/", page_size=20, delay=0.8
@@ -39,6 +36,12 @@ class ExamAPI:
         Returns:
             list: 包含学校信息的列表
         """
+
+        file_path = f"cache/school_{province_id}_{is_985}_{is_211}_{is_dual_class}.pkl"
+        data = get_data_from_cache(file_path)
+        if data is not None:
+            return data
+
         schools = []
         page = 1
         while True:
@@ -48,7 +51,7 @@ class ExamAPI:
                 f"&page={page}&province_id={province_id}&school_type=&size={self.page_size}&uri=apidata/api/gkv3/school/lists"
             )
             try:
-                response = requests.get(url, headers=self.header)
+                response = requests.get(url, headers=ExamAPI.create_header())
                 data = response.json()["data"]
                 schools += [
                     [
@@ -66,8 +69,10 @@ class ExamAPI:
                     break
                 page += 1
             except Exception as e:
-                logging.error(f"读取学校列表失败：{e}")
-                time.sleep(15)
+                logger.error(f"读取学校列表失败：{e}")
+                time.sleep(30)
+
+        save_data_to_cache(schools, file_path)
         return schools
 
     def get_score_line_detail(self, year, province_id, school_id):
@@ -78,6 +83,7 @@ class ExamAPI:
             school_id (int): 学校 ID
 
         Returns:
+        
             list: 包含详细信息的列表
         """
         details = []
@@ -86,7 +92,7 @@ class ExamAPI:
             time.sleep(self.delay)
             url = f"{self.base_url}?local_province_id={province_id}&page={page}&school_id={school_id}&size={self.page_size}&uri=apidata/api/gk/score/special&year={year}"
             try:
-                response = requests.get(url, headers=self.header)
+                response = requests.get(url, headers=ExamAPI.create_header())
                 data = response.json()["data"]
                 details += data["item"]
 
@@ -95,7 +101,55 @@ class ExamAPI:
                     break
                 page += 1
             except Exception as e:
-                logging.error(f"读取 {year} 年 {school_id} 学校的数据失败：{e}")
-                time.sleep(15)
+                logger.error(
+                    f"分数线，读取 {year} 年 {school_id} 学校的第 {page} 页数据失败：{e}"
+                )
+                time.sleep(30)
 
         return details
+
+    def get_enrollment_plan(self, province_id, school_id, year):
+        """获取给定省份、学校和年份的招生计划
+
+        Args:
+            province_id (int): 省份 ID
+            school_id (int): 学校 ID
+            year (int): 年份
+
+        Returns:
+            list: 包含招生计划的列表
+        """
+        plans = []
+        page = 1
+        while True:
+            time.sleep(self.delay)
+            url = f"{self.base_url}?local_province_id={province_id}&page={page}&school_id={school_id}&size={self.page_size}&uri=apidata/api/gkv3/plan/school&year={year}"
+            try:
+                response = requests.get(url, headers=ExamAPI.create_header())
+                data = response.json()["data"]
+                plans += data["item"]
+
+                num_plans = int(data["numFound"])
+                if page * self.page_size >= num_plans:
+                    break
+                page += 1
+            except Exception as e:
+                logger.error(
+                    f"招生计划，读取 {year} 年 {school_id} 学校的第 {page} 页数据失败：{e}"
+                )
+                time.sleep(30)
+
+        return plans
+
+    def create_header(**kwargs):
+        return {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": UserAgent().random,
+            **kwargs,
+        }
+
+
+if __name__ == "__main__":
+    exam_api = ExamAPI()
+    print(exam_api.get_school_list(province_id=0))
