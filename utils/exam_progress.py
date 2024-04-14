@@ -1,5 +1,6 @@
 from .progress import IProgress
 
+import os
 import os.path as osp
 import pandas as pd
 
@@ -12,11 +13,17 @@ class ExamProgress(IProgress):
         self.progress_file = progress_file
         self.output_file = output_file
 
+        os.makedirs(osp.dirname(progress_file), exist_ok=True)
+        os.makedirs(osp.dirname(output_file), exist_ok=True)
+
     def get_progress(self):
         """获取数据抓取的当前进度（最后被抓取的学校序号）"""
-        if osp.exists(self.progress_file):
-            with open(self.progress_file, "r") as f:
-                return int(f.read())
+        try:
+            if osp.exists(self.progress_file):
+                with open(self.progress_file, "r") as f:
+                    return int(f.read())
+        except:
+            return 0
         return 0
 
     def save_progress(self, i, df: pd.DataFrame):

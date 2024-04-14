@@ -4,6 +4,9 @@ from fake_useragent import UserAgent
 from utils import get_logger
 from cache import *
 
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 logger = get_logger(logger_name="ExamAPI", log_file="./logs/exam_api.log")
 
 
@@ -24,7 +27,9 @@ class ExamAPI:
         self.page_size = page_size
         self.delay = delay
 
-    def get_school_list(self, province_id=0, is_985=0, is_211=0, is_dual_class=0):
+    def get_school_list(
+        self, province_id=0, is_985=0, is_211=0, is_dual_class=0, remove_header=True
+    ):
         """获取给定省份的学校列表
 
         Args:
@@ -40,9 +45,24 @@ class ExamAPI:
         file_path = f"cache/school_{province_id}_{is_985}_{is_211}_{is_dual_class}.pkl"
         data = get_data_from_cache(file_path)
         if data is not None:
-            return data
+            return data[1:] if remove_header else data
 
-        schools = []
+        schools = [
+            [
+                "学校 ID",
+                "院校代码",
+                "学校名称",
+                "省份",
+                "城市",
+                "隶属",
+                "办学层次",
+                "办学类型",
+                "学校性质",
+                "是否双一流",
+                "是否 985",
+                "是否 211",
+            ]
+        ]
         page = 1
         while True:
             time.sleep(self.delay)
@@ -60,6 +80,13 @@ class ExamAPI:
                         item["name"],
                         item["province_name"],
                         item["city_name"],
+                        item["belong"],
+                        item["level_name"],
+                        item["type_name"],
+                        item["nature_name"],
+                        "是" if item["dual_class_name"] == "双一流" else "否",
+                        "是" if item["f985"] == 1 else "否",
+                        "是" if item["f211"] == 1 else "否",
                     ]
                     for item in data["item"]
                 ]
@@ -73,7 +100,7 @@ class ExamAPI:
                 time.sleep(30)
 
         save_data_to_cache(schools, file_path)
-        return schools
+        return schools[1:] if remove_header else schools
 
     def get_score_line_detail(self, year, province_id, school_id):
         """获取给定年份和学校 ID 的详细信息
@@ -83,16 +110,23 @@ class ExamAPI:
             school_id (int): 学校 ID
 
         Returns:
-        
+
             list: 包含详细信息的列表
         """
+
+        session = requests.Session()
+        retry = Retry(connect=3, backoff_factor=0.5)
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
         details = []
         page = 1
         while True:
             time.sleep(self.delay)
-            url = f"{self.base_url}?local_province_id={province_id}&page={page}&school_id={school_id}&size={self.page_size}&uri=apidata/api/gk/score/special&year={year}"
+            url = f"{self.base_url}?local_batch_id=0&local_province_id={province_id}&page={page}&school_id={school_id}&size={self.page_size}&uri=apidata/api/gk/score/special&year={year}"
             try:
-                response = requests.get(url, headers=ExamAPI.create_header())
+                response = session.get(url, headers=ExamAPI.create_header(), timeout=2)
                 data = response.json()["data"]
                 details += data["item"]
 
@@ -119,13 +153,20 @@ class ExamAPI:
         Returns:
             list: 包含招生计划的列表
         """
+
+        session = requests.Session()
+        retry = Retry(connect=3, backoff_factor=0.5)
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
         plans = []
         page = 1
         while True:
             time.sleep(self.delay)
-            url = f"{self.base_url}?local_province_id={province_id}&page={page}&school_id={school_id}&size={self.page_size}&uri=apidata/api/gkv3/plan/school&year={year}"
+            url = f"{self.base_url}?local_batch_id=0&local_province_id={province_id}&page={page}&school_id={school_id}&size={self.page_size}&uri=apidata/api/gkv3/plan/school&year={year}"
             try:
-                response = requests.get(url, headers=ExamAPI.create_header())
+                response = session.post(url, headers=ExamAPI.create_header(), timeout=2)
                 data = response.json()["data"]
                 plans += data["item"]
 
@@ -151,5 +192,11 @@ class ExamAPI:
 
 
 if __name__ == "__main__":
-    exam_api = ExamAPI()
-    print(exam_api.get_school_list(province_id=0))
+    exam_api = ExamAPI(delay=1.2)
+    data = exam_api.get_school_list(province_id=0)
+
+    import csv
+
+    with open("data/school_list.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerows(data)
