@@ -3,7 +3,8 @@ from exam_api import ExamAPI
 from utils import ExamProgress, get_logger
 
 def fetch_score_line(
-    province_id=33, date_range=(2020, 2023), output_file=None, progress_file=None
+    province_id=33, date_range=(2020, 2023), output_file=None, progress_file=None,
+    school_province_id=33
 ):
     """获取全国各学校对特定省份的特定年份的录取分数线
 
@@ -30,7 +31,7 @@ def fetch_score_line(
     start_idx = exam_progress.get_progress()
 
     # 获取全国学校列表，省份 ID 为 0
-    lst_sch = exam_api.get_school_list()[start_idx:]
+    lst_sch = exam_api.get_school_list(province_id=school_province_id)[start_idx:]
 
     if start_idx != 0:
         logger.warn(f"断点续传，从第 {start_idx} 所学校开始（从 0 开始计数）")
@@ -119,6 +120,7 @@ def fetch_score_line(
             df = pd.concat([df, pd.DataFrame(school_details, columns=df.columns)])
             # 增加进度
             idx += 1
+            # break
     finally:
         # 保存进度和抓取的数据
         exam_progress.save_progress(idx, df)
@@ -251,5 +253,5 @@ def fetch_enrollment(
 
 
 if __name__ == "__main__":
-    fetch_score_line(province_id=33, date_range=(2017, 2019))
+    fetch_score_line(province_id=43, date_range=(2020, 2023), school_province_id=33)
     # fetch_enrollment(province_id=33, date_range=(2020, 2023))

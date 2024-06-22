@@ -102,6 +102,11 @@ class ExamAPI:
         save_data_to_cache(schools, file_path)
         return schools[1:] if remove_header else schools
 
+    def get_profession_score_dict(self, school_id):
+        url = f"https://static-data.gaokao.cn/www/2.0/school/{school_id}/dic/professionalscore.json"
+        response = requests.get(url, headers=ExamAPI.create_header(), timeout=2)
+        return response.json()['data']['newsdata']['year']
+        
     def get_score_line_detail(self, year, province_id, school_id):
         """获取给定年份和学校 ID 的详细信息
 
@@ -120,20 +125,29 @@ class ExamAPI:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
 
+        years = self.get_profession_score_dict(school_id).get(str(province_id), [])
+
         details = []
         page = 1
-        while True:
-            time.sleep(self.delay)
-            url = f"{self.base_url}?local_batch_id=0&local_province_id={province_id}&page={page}&school_id={school_id}&size={self.page_size}&uri=apidata/api/gk/score/special&year={year}"
+        # while True:
+        time.sleep(self.delay)
+        # url = f"{self.base_url}?local_batch_id=0&local_province_id={province_id}&page={page}&school_id={school_id}&size={self.page_size}&uri=apidata/api/gk/score/special&year={year}"
+        # https://static-data.gaokao.cn/www/2.0/schoolspecialplan/76/2023/33.json
+        for _year in years:
+            if _year < 2020:
+                continue
+            url = f"https://static-data.gaokao.cn/www/2.0/schoolspecialscore/{school_id}/{_year}/{province_id}.json"
             try:
-                response = session.get(url, headers=ExamAPI.create_header(), timeout=2)
+                response = session.get(
+                    url, headers=ExamAPI.create_header(), timeout=2)
                 data = response.json()["data"]
-                details += data["item"]
+                for k in data.keys():
+                    details += data[k]["item"]
 
-                num_majors = int(data["numFound"])
-                if page * self.page_size >= num_majors:
-                    break
-                page += 1
+                # num_majors = int(data["numFound"])
+                # if page * self.page_size >= num_majors:
+                #     break
+                # page += 1
             except Exception as e:
                 logger.error(
                     f"分数线，读取 {year} 年 {school_id} 学校的第 {page} 页数据失败：{e}"
@@ -166,7 +180,8 @@ class ExamAPI:
             time.sleep(self.delay)
             url = f"{self.base_url}?local_batch_id=0&local_province_id={province_id}&page={page}&school_id={school_id}&size={self.page_size}&uri=apidata/api/gkv3/plan/school&year={year}"
             try:
-                response = session.post(url, headers=ExamAPI.create_header(), timeout=2)
+                response = session.post(
+                    url, headers=ExamAPI.create_header(), timeout=2)
                 data = response.json()["data"]
                 plans += data["item"]
 
@@ -187,6 +202,10 @@ class ExamAPI:
             "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": UserAgent().random,
+            'sec-ch-ua': '"Microsoft Edge";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
+            'Referer': 'https://www.gaokao.cn/',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"macOS"',
             **kwargs,
         }
 
